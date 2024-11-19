@@ -31,7 +31,7 @@ Pentru începerea jocului, butonul de start poate fi implementat într-un mod fl
 
 ### Desfășurarea Rundelor
 
-   -Fiecare jucător are trei butoane, fiecare asociat unui LED de o culoare diferită și un al 4-lea LED RGB.
+   - Fiecare jucător are trei butoane, fiecare asociat unui LED de o culoare diferită și un al 4-lea LED RGB.
    - La fiecare rundă, fiecare jucător este cel activ.
    - LED-ul RGB al jucătorului activ se aprinde într-o culoare corespunzătoare unuia dintre butoanele sale. Jucătorul trebuie să apese cât mai rapid butonul care corespunde culorii LED-ului RGB, pentru a obține puncte. Cu cât reacționează mai repede, cu atât primește mai multe puncte.
    - La finalul unei runde LCD-ul afișează punctajul actualizat al ambilor jucători.
@@ -39,7 +39,7 @@ Pentru începerea jocului, butonul de start poate fi implementat într-un mod fl
 
 ### Timpul și Finalizarea Jocului
 
-   -Servomotorul se rotește pe parcursul jocului, indicând progresul. O rotație completă a servomotorului marchează sfârșitul jocului (voi decideti cat de repede se misca).
-    -La final, LCD-ul afișează numele câștigătorului și scorul final pentru câteva secunde, apoi revine la ecranul de start cu mesajul de bun venit.
+  - Servomotorul se rotește pe parcursul jocului, indicând progresul. O rotație completă a servomotorului marchează sfârșitul jocului (voi decideti cat de repede se misca).
+  - La final, LCD-ul afișează numele câștigătorului și scorul final pentru câteva secunde, apoi revine la ecranul de start cu mesajul de bun venit.
 
 
