@@ -79,4 +79,10 @@ Aveți libertatea de a decide următoarele elemente:
    - Timpul dintre runde (puteți avea un mic timp de pregătire între runde sau pot fi imediat una după cealaltă pentru o dificultatea crescută)
    - Timpul întregului joc
 
+## Schema electrica a circuitului implementat pe Wokwi:
+
+
+
+
+
 
