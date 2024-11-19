@@ -9,4 +9,5 @@
  - 2x Arduino Uno
  - 1x Potentiometru
  - 1x Buzzer
+ - ?x Rezistoare (?x 330ohm pentru leduri, ?x 1kohm pentru butoane)
     ##
