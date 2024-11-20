@@ -7,13 +7,20 @@ void evaluateButtonPress();
 void lightUpLED(char selectedColor);
 void turnOffAllLEDs();
 
+// SPI communication variables
 volatile char spiCommand = '\0';
 volatile bool newSPICommand = false;
 
 // Pin definitions
-const int analogButtonPin = A0;
+const int analogButtonPinPlayer1 = A0;
+const int analogButtonPinPlayer2 = A1;
 const int buzzerControlPin = 2;
 const int commonSmallLEDPin = 3;
+
+// Player button thresholds
+const int buttonThresholdsPlayer1[3] = {280, 550, 770}; // Red, Green, Blue
+const int buttonThresholdsPlayer2[3] = {320, 400, 540}; // Red, Green, Blue
+const int thresholdTolerance = 10;
 
 // Player LED pins
 const int p1RedLEDPin = 4;
@@ -28,8 +35,13 @@ unsigned long buttonPressStartTime = 0;
 bool isWaitingForButtonPress = false;
 bool isPlayerOneActive = true;
 
+const unsigned long excellentTime = 1500; // Excellent response time
+const unsigned long goodTime = 3000;     // Good response time
+const unsigned long mediocreTime = 5000; // Mediocre response time
+const unsigned long timeoutTime = 4500;  // Timeout for button press
+
 void setup() {
-  Serial.begin(28800);         // Debugging
+  Serial.begin(28800);        // Debugging
   SPCR |= bit(SPE);            // Enable SPI in slave mode
   pinMode(MISO, OUTPUT);       // Set MISO as output for SPI
   SPI.attachInterrupt();       // Enable SPI interrupt
@@ -47,10 +59,9 @@ void setup() {
   digitalWrite(commonSmallLEDPin, HIGH); // Small LED active during the game
 }
 
-// SPI interrupt
 ISR(SPI_STC_vect) {
   char receivedData = SPDR;
-  if (receivedData != '#') { // Ignore the '#' command
+  if (receivedData != '#') { // Ignore '#' command
     spiCommand = receivedData;
     newSPICommand = true;
   }
@@ -64,7 +75,7 @@ void loop() {
     if (spiCommand == 'r' || spiCommand == 'g' || spiCommand == 'b') {
       initiateButtonChallenge(spiCommand);
     } else {
-      SPDR = '$'; // Send default response for unknown commands
+      SPDR = '$';
     }
   }
 
@@ -85,53 +96,58 @@ void initiateButtonChallenge(char selectedColor) {
 
 void evaluateButtonPress() {
   unsigned long elapsedTime = millis() - buttonPressStartTime;
-  int buttonReadValue = analogRead(analogButtonPin);
-  Serial.print("Button value: ");
-  Serial.println(buttonReadValue);
+  int buttonReadValue = analogRead(isPlayerOneActive ? analogButtonPinPlayer1 : analogButtonPinPlayer2);
 
-  bool isButtonPressed = false;
+  // Get the correct thresholds for the current player
+  const int* thresholds = isPlayerOneActive ? buttonThresholdsPlayer1 : buttonThresholdsPlayer2;
 
-  // Ignore noise around the "no button pressed" state
-  if ( buttonReadValue <= 50) {
-    return; // No button is pressed, exit the function
-  }
+  // Determine the color index for the expected color
+  int expectedIndex = (spiCommand == 'r') ? 0 : (spiCommand == 'g') ? 1 : 2;
+  int expectedThreshold = thresholds[expectedIndex];
 
-  // Check button press for each player
-  if (isPlayerOneActive) {
-    if ((spiCommand == 'b' && buttonReadValue >= 120 && buttonReadValue <= 140) ||
-        (spiCommand == 'g' && buttonReadValue >= 85 && buttonReadValue <= 100) ||
-        (spiCommand == 'r' && buttonReadValue >= 955 && buttonReadValue <= 970)) {
-      isButtonPressed = true;
-    }
-  } else {
-    if ((spiCommand == 'b' && buttonReadValue >= 80 && buttonReadValue <= 90) ||
-        (spiCommand == 'g' && buttonReadValue >= 935 && buttonReadValue <= 945) ||
-        (spiCommand == 'r' && buttonReadValue >= 970 && buttonReadValue <= 980)) {
-      isButtonPressed = true;
-    }
-  }
-
-  if (isButtonPressed) {
+  // Check if the button press matches the correct threshold
+  if (abs(buttonReadValue - expectedThreshold) <= thresholdTolerance) {
+    // Correct button press
     isWaitingForButtonPress = false;
     char scoreGrade;
 
     // Determine score based on response time
-    if (elapsedTime <= 300) {
+    if (elapsedTime <= excellentTime) {
+      Serial.println("Excellent");
       scoreGrade = 'e'; // Excellent
-    } else if (elapsedTime <= 600) {
+    } else if (elapsedTime <= goodTime) {
+      Serial.println("Good");
       scoreGrade = 'g'; // Good
-    } else if (elapsedTime <= 1000) {
+    } else if (elapsedTime <= mediocreTime) {
+      Serial.println("Mediocre");
       scoreGrade = 'm'; // Mediocre
     } else {
-      scoreGrade = 'i'; // Invalid
+      Serial.println("Too Late");
+      scoreGrade = 'i'; // Invalid (too late)
     }
 
     SPDR = scoreGrade; // Send score through SPI
     if (scoreGrade != 'i') {
-      tone(buzzerControlPin, 659, 200); // Emit sound for valid scores
+      tone(buzzerControlPin, 659, 200); // Success tone
     }
     isPlayerOneActive = !isPlayerOneActive; // Switch active player
-  } else if (elapsedTime > 900) { // Timeout
+  } else {
+    // Check if the button press matches any other threshold
+    for (int i = 0; i < 3; i++) {
+      if (i != expectedIndex && abs(buttonReadValue - thresholds[i]) <= thresholdTolerance) {
+        // Invalid button press
+        Serial.println("Wrong Color");
+        isWaitingForButtonPress = false;
+        SPDR = 'i'; // Send "invalid" response
+        tone(buzzerControlPin, 440, 500); // Error tone
+        return;
+      }
+    }
+  }
+
+  // Timeout handling
+  if (elapsedTime > timeoutTime) {
+    Serial.println("Timeout");
     isWaitingForButtonPress = false;
     SPDR = 'i'; // Send timeout response
     isPlayerOneActive = !isPlayerOneActive; // Switch active player
@@ -147,15 +163,12 @@ void lightUpLED(char selectedColor) {
     targetLEDPin = (selectedColor == 'r') ? p1RedLEDPin :
                    (selectedColor == 'g') ? p1GreenLEDPin :
                    p1BlueLEDPin;
-    Serial.print("Lighting Player 1 LED: ");
   } else {
     targetLEDPin = (selectedColor == 'r') ? p2RedLEDPin :
                    (selectedColor == 'g') ? p2GreenLEDPin :
                    p2BlueLEDPin;
-    Serial.print("Lighting Player 2 LED: ");
   }
 
-  Serial.println(targetLEDPin);
   digitalWrite(targetLEDPin, HIGH);
 }
 
