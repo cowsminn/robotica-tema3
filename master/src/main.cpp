@@ -1,240 +1,190 @@
-#include <Arduino.h>
 #include <SPI.h>
 #include <LiquidCrystal.h>
 #include <Servo.h>
 #include <Wire.h>
 
-// initializare lcd cu pinii rs, e, d4, d5, d6, d7
-const int lcdRS = 9;
-const int lcdE = 8;
-const int lcdD4 = 5;
-const int lcdD5 = 4;
-const int lcdD6 = 3;
-const int lcdD7 = 2;
+LiquidCrystal lcd(9, 8, 5, 4, 3, 2);
+Servo cronometruServo;
 
-LiquidCrystal lcd(lcdRS, lcdE, lcdD4, lcdD5, lcdD6, lcdD7);
-Servo gameServo;
+const int pinButonStart = 7;
+const int pinServo = 6;
+const int servoUnghiMaxim = 180;
+const unsigned long timpTotalJoc = 150000;  // 30 secunde
 
-// definire pini
-const int startButtonPin = 7;
-const int servoControlPin = 6;
-const int servoMaxPosition = 180;
-const unsigned long totalGameTime = 30000; // durata totala a jocului (30 secunde)
+char culori[] = {'r', 'g', 'b'};
+unsigned long timpStartJoc = 0;
+unsigned long timpUltimaRunda = 0;
+unsigned long timpRunda = 5000; 
+bool jocInceput = false;
+bool asteaptaRaspuns = false;
+char raspuns;
 
-// vector cu culorile disponibile
-char availableColors[] = {'r', 'g', 'b'};
+String jucator1, jucator2;
+int jucator1scor = 0;
+int jucator2scor = 0;
+int cronometruRunda = 0;
+bool randJucator1 = true;
+// Sends a random color command ('r', 'g', 'b') to the SPI slave
+void sendColorCommand();
 
-// variabile de stare ale jocului
-unsigned long startGameTime = 0;
-unsigned long lastTurnTime = 0;
-unsigned long turnInterval = 3000; // interval intre runde
-bool gameInProgress = false;
-bool waitingForResponse = false;
-char receivedResponse;
+// Updates the player's score based on the response received from the SPI slave
+void scorNou(char scor);
 
-// nume jucatori si scoruri
-String playerOneName, playerTwoName;
-int playerOneScore = 0;
-int playerTwoScore = 0;
-int roundNumber = 0;
-bool isPlayerOneTurn = true;
+// Sends a command via SPI and receives a response
+char sendCommand(char command);
 
-// prototipurile functiilor
-void startGame();
-void checkGameStatus();
-void processTurn();
-void displayFinalScores();
-void resetGameSettings();
-void transmitColorCommand();
-char exchangeSPICommand(char command);
-void updatePlayerScore(char scoreResponse);
-String readPlayerName();
+// Displays the final scores and announces the winner on the LCD
+void displayWinner();
+
+// Resets the game state and prepares for a new game session
+void resetGame();
 
 void setup() {
   Serial.begin(28800);
-  Serial.println("testttt");
   SPI.begin();
   pinMode(SS, OUTPUT);
   digitalWrite(SS, HIGH);
-  pinMode(startButtonPin, INPUT_PULLUP);
-  Serial.println("testttt");
+  pinMode(pinButonStart, INPUT_PULLUP);
 
-  // configurare lcd si servo
   lcd.begin(16, 2);
-  gameServo.attach(servoControlPin);
-  lcd.print("press to start!");
-  Serial.println("testttt");
+  cronometruServo.attach(pinServo);
+
+  lcd.print("Incepe jocul!");
 }
 
 void loop() {
-  // porneste jocul cand butonul este apasat
-  if (!gameInProgress && digitalRead(startButtonPin) == LOW) {
+  if (!jocInceput && digitalRead(pinButonStart) == LOW) {
     delay(200);
-    startGame();
+    jocInceput = true;
+    lcd.clear();
+    lcd.print("Nume jucator 1:");
+    while (Serial.available() == 0) {}
+    jucator1 = Serial.readStringUntil('\n'); 
+
+    lcd.clear();
+    lcd.print("Nume jucator 2:");
+    while (Serial.available() == 0) {}
+    jucator2 = Serial.readStringUntil('\n');
+
+    timpStartJoc = millis();
   }
 
-  // actualizeaza starea jocului daca acesta este in curs
-  if (gameInProgress) {
-    checkGameStatus();
-  }
-}
+  if (jocInceput) {
+    unsigned long millisCurent = millis();
 
-void startGame() {
-  gameInProgress = true;
-  lcd.clear();
-  lcd.print("enter player 1:");
-  Serial.println("enter player 1 name:");
+    // Daca au trecut 30 de secunde jocul s-a terminat
+    if (millisCurent - timpStartJoc >= timpTotalJoc) {
+      jocInceput = false;
+      displayWinner();
+      resetGame();
+      return;
+    }
 
-  // citeste numele primului jucator de la serial
-  playerOneName = readPlayerName();
+    // Roteste servo-ul
+    int angle = map(millisCurent - timpStartJoc, 0, timpTotalJoc, 0, servoUnghiMaxim);
+    cronometruServo.write(angle);
 
-  lcd.clear();
-  lcd.print("enter player 2:");
-  Serial.println("enter player 2 name:");
-
-  // citeste numele celui de-al doilea jucator de la serial
-  playerTwoName = readPlayerName();
-
-  // porneste cronometrul pentru joc
-  startGameTime = millis();
-  lcd.clear();
-  lcd.print("game starting!");
-  delay(1000);
-  lcd.clear();
-}
-
-// functie pentru a citi numele unui jucator de la serial
-String readPlayerName() {
-  String playerName = "";
-  while (true) {
-    if (Serial.available() > 0) {
-      char incomingChar = Serial.read();
-      if (incomingChar == '\n') {
-        break; // opreste citirea cand se apasa enter
-      }
-      // verifica daca caracterul este printabil
-      if (isPrintable(incomingChar)) {
-        playerName += incomingChar;
-        lcd.setCursor(playerName.length() - 1, 1); // seteaza cursorul pe lcd
-        lcd.print(incomingChar); // afiseaza caracterul pe lcd
+    // Randul celuilalt jucator dupa cate 1 secunda
+    if (millisCurent - timpUltimaRunda >= timpRunda) {
+      if (cronometruRunda < 30) {  // 15 runde fiecare jucator
+        if (randJucator1) {
+          lcd.clear();
+          lcd.print("Runda " + jucator1);
+          sendColorCommand();
+        } else {
+          lcd.clear();
+          lcd.print("Runda " + jucator2);
+          sendColorCommand();
+        }
+        delay(1000);
+        asteaptaRaspuns = true;
+        timpUltimaRunda = millisCurent;
+        randJucator1 = !randJucator1;
+        cronometruRunda++;
       }
     }
+
+    // Primeste si proceseaza raspunsul de la slave
+    if (asteaptaRaspuns) {
+      raspuns = sendCommand('#');
+      Serial.println((randJucator1 ? jucator2 : jucator1) + " scor: ");
+      Serial.println(raspuns);
+
+      scorNou(raspuns);
+      asteaptaRaspuns = false;
+    }
   }
-  return playerName;
+  Serial.println();
 }
 
-void checkGameStatus() {
-  unsigned long currentMillis = millis();
-
-  // verifica daca jocul s-a terminat dupa 30 de secunde
-  if (currentMillis - startGameTime >= totalGameTime) {
-    gameInProgress = false; 
-    displayFinalScores();
-    resetGameSettings();
-    return;
-  }
-
-  // actualizeaza pozitia servo-ului pe baza timpului scurs
-  int servoAngle = map(currentMillis - startGameTime, 0, totalGameTime, 0, servoMaxPosition);
-  gameServo.write(servoAngle);
-
-  // proceseaza o noua runda daca a trecut intervalul de timp
-  if (currentMillis - lastTurnTime >= turnInterval) {
-    processTurn();
-    lastTurnTime = currentMillis;
-  }
-
-  // verifica daca s-a primit un raspuns de la dispozitivul slave
-  if (waitingForResponse) {
-    Serial.println((isPlayerOneTurn ? playerTwoName : playerOneName) + " received score:");
-    Serial.println(receivedResponse);
-    updatePlayerScore(receivedResponse);
-    waitingForResponse = false;
-  }
+// Functie care trimite culoarea prin SPI
+void sendColorCommand() {
+  char colorCommand = culori[random(0, 3)];
+  sendCommand(colorCommand);
+  Serial.print("Sent color: ");
+  Serial.println(colorCommand);
 }
 
-void processTurn() {
-  // proceseaza runda daca numarul de runde este mai mic de 30
-  if (roundNumber < 30) {
-    lcd.clear();
-    lcd.print((isPlayerOneTurn ? playerOneName : playerTwoName) + " turn");
-    transmitColorCommand();
-    delay(1000);
-    waitingForResponse = true;
-    isPlayerOneTurn = !isPlayerOneTurn;
-    roundNumber++;
+// Noul scor in functie de raspunsul jucatorului
+void scorNou(char scor) {
+  int puncte = 0;
+  switch (scor) {
+    case 'e': puncte = 50; break;
+    case 'g': puncte = 25; break;
+    case 'm': puncte = 10; break;
+    case 'i': puncte = 0; break;
+  }
+
+  if (!randJucator1) {
+    jucator1scor += puncte;
+  } else {
+    jucator2scor += puncte;
   }
 }
 
-void transmitColorCommand() {
-  // selecteaza si trimite o comanda cu o culoare aleatorie
-  char colorToSend = availableColors[random(0, 3)];
-  exchangeSPICommand(colorToSend);
-  delay(50); // scurta intarziere pentru stabilitate
-  Serial.print("sent color: ");
-  Serial.println(colorToSend);
-}
-
-char exchangeSPICommand(char command) {
-  // trimite comanda si primeste raspunsul prin spi
+char sendCommand(char command) {
   digitalWrite(SS, LOW);
-  char response = SPI.transfer(command);
+  char response;
+  do {
+    SPI.transfer(command); // Send the command
+    delay(10);             // Give the slave some time to process
+    response = SPI.transfer("#"); // Check for the response
+  } while (response == '$'); // Wait until a valid response is received
   digitalWrite(SS, HIGH);
-  delay(50); // intarziere pentru sincronizare
   return response;
 }
 
-void updatePlayerScore(char scoreResponse) {
-  int scorePoints = 0;
-
-  // actualizeaza scorul pe baza raspunsului primit
-  switch (scoreResponse) {
-    case 'e': scorePoints = 100; break; // excellent
-    case 'g': scorePoints = 50; break;  // good
-    case 'm': scorePoints = 25; break;  // mediocre
-    case 'i': scorePoints = 0; break;   // invalid
-  }
-
-  // actualizeaza scorul pentru jucatorul curent
-  if (isPlayerOneTurn) {
-    playerTwoScore += scorePoints;
-  } else {
-    playerOneScore += scorePoints;
-  }
-}
-
-void displayFinalScores() {
-  // afiseaza scorurile finale pentru ambii jucatori
+// Afiseaza scorul final si castigatorul jocului
+void displayWinner() {
   lcd.clear();
-  lcd.print(playerOneName + " score:");
+  lcd.print(jucator1 + " scor:");
   lcd.setCursor(0, 1);
-  lcd.print(playerOneScore);
+  lcd.print(jucator1scor);
   delay(2000);
 
   lcd.clear();
-  lcd.print(playerTwoName + " score:");
+  lcd.print(jucator2 + " scor:");
   lcd.setCursor(0, 1);
-  lcd.print(playerTwoScore);
+  lcd.print(jucator2scor);
   delay(2000);
 
-  // determina si afiseaza castigatorul
   lcd.clear();
-  if (playerOneScore > playerTwoScore) {
-    lcd.print("winner: " + playerOneName);
-  } else if (playerTwoScore > playerOneScore) {
-    lcd.print("winner: " + playerTwoName);
+  if (jucator1scor > jucator2scor) {
+    lcd.print("Castigator: " + jucator1);
+  } else if (jucator2scor > jucator1scor) {
+    lcd.print("Castigator: " + jucator2);
   } else {
-    lcd.print("it's a draw!");
+    lcd.print("Egalitate!");
   }
   delay(2000);
 }
 
-void resetGameSettings() {
-  // reseteaza variabilele de scor si de stare
-  playerOneScore = 0;
-  playerTwoScore = 0;
-  roundNumber = 0;
-  isPlayerOneTurn = true;
+// Reseteaza jocul la starea initiala
+void resetGame() {
+  jucator1scor = 0;
+  jucator2scor = 0;
+  cronometruRunda = 0;
+  randJucator1 = true;
   lcd.clear();
-  lcd.print("press to start!");
+  lcd.print("Incepe jocul!");
 }
