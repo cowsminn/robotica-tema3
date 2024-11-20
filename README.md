@@ -82,8 +82,21 @@ Aveți libertatea de a decide următoarele elemente:
 ## Schema electrica a circuitului implementat pe Wokwi:
 
 
-## Imagini cu Setup-ul Fizic
+## Imagini cu Setup-ul Fizic:
 
+![img1](./img/p1.jpeg)
+
+![img2](./img/p2.jpeg)
+
+![img3](./img/p3.jpeg)
+
+![img4](./img/p4.jpeg)
+
+![img5](./img/p5.jpeg)
+
+![img6](./img/p6.jpeg)
+
+![img7](./img/p7.jpeg)
 
 ## Link-ul catre video:
 
