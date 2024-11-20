@@ -80,7 +80,7 @@ Aveți libertatea de a decide următoarele elemente:
    - Timpul întregului joc
 
 ## Schema electrica a circuitului implementat pe Wokwi:
-![img](./img/img.png)
+![img](./img/image.png)
 
 ## Imagini cu Setup-ul Fizic:
 
